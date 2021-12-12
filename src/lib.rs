@@ -20,12 +20,16 @@ const DAT_MASK:   u64 = 0x00000000FFFFFFFF;
 const DAT_UNMASK: u64 = 0xFFFFFFFF00000000;
 
 /// A tag that can be converted from/into a `NonZeroU16`.
-pub trait NaNTag: From<NonZeroU16> + Into<NonZeroU16> {}
+pub trait NaNTag: From<NonZeroU16> + Into<NonZeroU16> + Clone + Copy {}
+impl NaNTag for NonZeroU16 {}
 
 /// Data that can be converted from/into a `u32`.
-pub trait NaNDat: From<u32> + Into<u32> {}
+pub trait NaNDat: From<u32> + Into<u32> + Clone + Copy {}
+impl NaNDat for u32 {}
 
 /// A raw NaN-tagged value.
+#[repr(C)]
+#[derive(Clone, Copy)]
 pub union RawNaNVal<TAG, DAT> where TAG: NaNTag, DAT: NaNDat {
     f: f64,
     u: u64,
@@ -33,13 +37,23 @@ pub union RawNaNVal<TAG, DAT> where TAG: NaNTag, DAT: NaNDat {
 }
 
 impl<TAG: NaNTag, DAT: NaNDat> RawNaNVal<TAG, DAT> {
-    /// Creates a new [`RawNaNVal`] from the given `f64`.
+    /// Creates a new [`RawNaNVal`] from the given `f64`, if valid.
     pub fn from_float(f: f64) -> Option<Self> {
         let new = Self {f};
         if new.has_tag() {
             return None
         }
         Some(new)
+    }
+    
+    /// Creates a new [`RawNaNVal`] from the given `f64`.
+    /// 
+    /// # Safety
+    /// If there is a tag set, the returned [`RawNaNVal`] will have an invalid tag and data.
+    pub fn from_float_unchecked(f: f64) -> Self {
+        let new = Self {f};
+        debug_assert!(!new.has_tag(), "a float must not have tag");
+        new
     }
     
     /// Creates a new [`RawNaNVal`] from the given tag and no data.
@@ -66,8 +80,9 @@ impl<TAG: NaNTag, DAT: NaNDat> RawNaNVal<TAG, DAT> {
     /// Returns the tag, ignoring the signal
     /// 
     /// # Safety
-    /// Undefined behaviour will occur if the `has_tag`-check is skipped.
+    /// If the tag is not set (use `has_tag` to check), undefined behaviour will occur.
     pub unsafe fn get_tag_unchecked(&self) -> TAG {
+        debug_assert!(self.has_tag(), "invalid tag");
         let tag = (self.u & TAG_MASK) >> TAG_SHIFT;
         NonZeroU16::new_unchecked(tag as u16).into()
     }
@@ -75,9 +90,10 @@ impl<TAG: NaNTag, DAT: NaNDat> RawNaNVal<TAG, DAT> {
     /// Returns the data, ignoring the signal
     /// 
     /// # Safety
-    /// Undefined behaviour will occur if the `has_tag`-check is skipped.
-    pub unsafe fn get_dat_raw_unchecked(&self) -> DAT {
-        ((self.u & DAT_MASK) as u32).into()
+    /// You can (and will) receive corrupted data if the `has_tag`-check is skipped.
+    pub fn get_dat_raw_unchecked(&self) -> DAT {
+        debug_assert!(self.has_tag(), "invalid tag");
+        unsafe {((self.u & DAT_MASK) as u32).into()}
     }
     
     /// Returns if `self` is a tag & data.
@@ -97,25 +113,31 @@ impl<TAG: NaNTag, DAT: NaNDat> RawNaNVal<TAG, DAT> {
     /// Overrides `self`s tag with the given tag.
     /// 
     /// # Safety
-    /// Undefined behaviour will occur if the `has_tag`-check is skipped.
-    pub unsafe fn set_tag_unchecked(&mut self, tag: TAG) {
+    /// You can (and will) receive corrupted data if the `has_tag`-check is skipped.
+    pub fn set_tag_unchecked(&mut self, tag: TAG) {
+        debug_assert!(self.has_tag(), "retagging a float is invalid");
         let tag: u16 = tag.into().get();
         let tag = (tag as u64) << TAG_SHIFT;
         let tag = tag & TAG_MASK; // no spilling
-        self.u &= NAN_UNMASK; // remove NaN and tag
-        self.u |= NAN_SIGNAL | tag; // insert NaN and tag
+        unsafe {
+            self.u &= NAN_UNMASK; // remove NaN and tag
+            self.u |= NAN_SIGNAL | tag; // insert NaN and tag
+        }
     }
     
     /// Overrides `self`s data with the given data.
     /// 
     /// # Safety
-    /// Undefined behaviour will occur if the `has_tag`-check is skipped.
-    pub unsafe fn set_dat_unchecked(&mut self, dat: DAT) {
+    /// You can (and will) receive corrupted data if the `has_tag`-check is skipped.
+    pub fn set_dat_unchecked(&mut self, dat: DAT) {
+        debug_assert!(self.has_tag(), "partially rewriting a float is invalid");
         let dat: u32 = dat.into();
         let dat = dat as u64;
         let dat = dat & DAT_MASK; // no spilling
-        self.u &= DAT_UNMASK; // remove dat
-        self.u |= dat; // insert dat
+        unsafe {
+            self.u &= DAT_UNMASK; // remove dat
+            self.u |= dat; // insert dat
+        }
     }
     
     /// Overrides `self`s tag and data with the given values.
@@ -135,11 +157,9 @@ impl<TAG: NaNTag, DAT: NaNDat> RawNaNVal<TAG, DAT> {
     /// Tries to create a copy of `self`, with the given `DAT`, using the existing `TAG`.
     pub fn with_dat(&self, dat: DAT) -> Option<Self> {
         if self.has_tag() {
-            unsafe {
-                let mut n = self.clone();
-                n.set_dat_unchecked(dat);
-                return Some(n)
-            }
+            let mut n = *self;
+            n.set_dat_unchecked(dat);
+            return Some(n)
         }
         
         None
@@ -176,7 +196,7 @@ impl<TAG: NaNTag, DAT: NaNDat> RawNaNVal<TAG, DAT> {
     pub fn get_dat(&self) -> Option<DAT> {
         if self.has_tag() {
             // We just checked that there is a tag, so this is safe.
-            Some(unsafe {self.get_dat_raw_unchecked()})
+            Some(self.get_dat_raw_unchecked())
         } else {
             None
         }
@@ -187,8 +207,8 @@ impl<TAG: NaNTag, DAT: NaNDat> RawNaNVal<TAG, DAT> {
         if self.has_tag() {
             // We just checked that there is a tag, so this is safe.
             Some((
-                unsafe {self.get_tag_unchecked()},
-                unsafe {self.get_dat_raw_unchecked()}
+                unsafe{self.get_tag_unchecked()},
+                self.get_dat_raw_unchecked()
             ))
         } else {
             None
@@ -197,15 +217,6 @@ impl<TAG: NaNTag, DAT: NaNDat> RawNaNVal<TAG, DAT> {
 }
 
 // The following impl's are always safe.
-
-impl<TAG: NaNTag, DAT: NaNDat> Clone for RawNaNVal<TAG, DAT> {
-    fn clone(&self) -> Self {
-        unsafe {
-            // literally a bit-copy
-            Self {u: self.u}
-        }
-    }
-}
 
 impl<TAG: NaNTag, DAT: NaNDat> TryFrom<RawNaNVal<TAG, DAT>> for f64 {
     type Error = ();
@@ -234,4 +245,9 @@ impl<TAG: NaNTag, DAT: NaNDat> From<(TAG, DAT)> for RawNaNVal<TAG, DAT> {
     fn from((tag, dat): (TAG, DAT)) -> Self {
         Self::from_tag_and_data(tag, dat)
     }
+}
+
+#[test]
+fn size() {
+    assert!(core::mem::size_of::<RawNaNVal<NonZeroU16, u32>>() == 8)
 }
