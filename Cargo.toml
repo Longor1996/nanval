@@ -1,0 +1,14 @@
+[package]
+name = "nanval"
+version = "0.1.0"
+license = "MIT OR Apache-2.0"
+authors = ["Longor1996 <lalongok@gmail.com>"]
+edition = "2021"
+
+description = "A NaN-tagged value using a 64-bit floating-point number (`f64`) as base, with a 16-bit tag and 32-bit payload."
+keywords = ["nan", "nanbox", "tagged-enum", "pointers", "tagged-pointers"]
+categories = ["no-std"]
+
+readme = "README.md"
+homepage = "https://github.com/Longor1996/nanval"
+repository = "https://github.com/Longor1996/nanval"
