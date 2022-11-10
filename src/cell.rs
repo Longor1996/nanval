@@ -206,10 +206,13 @@ pub fn unwrap_cell_rawptr(value: impl IntoRawBits64) -> Option<*const ()> {
 /// However, performing any kind of logic- or arithmetic-operations
 /// on the returned value, will result in undefined behaviour.
 pub fn from_tag_and_pointer(tag: CellTag, ptr: *const ()) -> Option<u64> {
-    //let ptr: *const () = ptr.into();
+    from_tag_and_data(tag, ptr as u64)
+}
+
+pub fn from_tag_and_data(tag: CellTag, data: u64) -> Option<u64> {
     let vtag = (tag as u64) & CELL_TAG_BITS;
-    let vptr = (ptr as u64) & CELL_DATA_BITS;
+    let vdata = data & CELL_DATA_BITS;
     if vtag != tag as u64 {return None}
-    if vptr != ptr as u64 {return None}
-    Some(CELL_MARKER_BITS | vtag | vptr)
+    if vdata != data {return None}
+    Some(CELL_MARKER_BITS | vtag | vdata)
 }
