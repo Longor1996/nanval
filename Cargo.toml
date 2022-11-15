@@ -1,11 +1,11 @@
 [package]
 name = "nanval"
-version = "0.2.0"
+version = "0.2.1"
 license = "MIT OR Apache-2.0"
 authors = ["Longor1996 <lalongok@gmail.com>"]
 edition = "2021"
 
-description = "A 64-bit value, that is either a floating-point number (`f64`), or an arbitrary 52-bit integer."
+description = "A no_std, zero-dependency crate for the creation and handling of NaN-tagged 64-bit floating-point values."
 keywords = ["nan", "nanbox", "tagged-enum", "pointers", "tagged-pointers"]
 categories = ["no-std"]
 
