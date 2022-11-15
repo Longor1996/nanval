@@ -150,7 +150,7 @@ pub fn unwrap_tag_bits(value: impl IntoRawBits64) -> Option<u64> {
 #[inline(always)]
 pub fn unwrap_tag(value: impl IntoRawBits64) -> Option<CellTag> {
     match is_cell(value) {
-        true => CellTag::try_from(value.as_raw_bits_64()).ok(),
+        true => CellTag::try_from(value.as_raw_bits_64() & CELL_TAG_BITS).ok(),
         false => None
     }
 }
