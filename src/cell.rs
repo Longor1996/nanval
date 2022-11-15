@@ -29,6 +29,7 @@ pub const CELL_TAG_BITS: u64 = 0x0007000000000000;
 /// Tag `0` is intentionally left undefined,
 /// to prevent the value ever accidentally
 /// becoming the original/sentinel `NaN`.
+#[derive(Copy, Clone)]
 #[repr(u64)]
 pub enum CellTag {
     // Tag0 is intentionally undefined.
